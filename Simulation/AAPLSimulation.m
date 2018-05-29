@@ -447,45 +447,49 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
     return _positions[_newBufferIndex];
 }
 
+/// Run the asynchronous simulation loop
+- (void)runAsyncLoopWithUpdateHandler:(nonnull AAPLDataUpdateHandler)updateHandler
+{
+    do
+    {
+        _currentBufferIndex = (_currentBufferIndex + 1) % AAPLNumUpdateBuffersStored;
+
+        id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+
+        id<MTLBuffer> positionBuffer = [self simulateFrameWithCommandBuffer:commandBuffer];
+
+        [self fillUpdateBufferWithPositionBuffer:positionBuffer
+                                  usingCommandBuffer:commandBuffer];
+
+        // Pass data back to client to update it with a summary of progress
+        {
+            __block AAPLDataUpdateHandler block_updateHandler = updateHandler;
+            __block NSData *updateData = _updateData[_currentBufferIndex];
+            __block float updateSimulationTime = _simulationTime;
+            [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer)
+             {
+                 block_updateHandler(updateData, updateSimulationTime);
+             }];
+        }
+
+        [commandBuffer commit];
+
+    } while(_simulationTime < _config->simDuration && !self.halt);
+}
+
 /// Run the simulation asynchronously on a separate thread
 - (void)runAsyncWithUpdateHandler:(nonnull AAPLDataUpdateHandler)updateHandler
                      dataProvider:(nonnull AAPLFullDatasetProvider)dataProvider
 {
     dispatch_queue_t globalConcurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
 
-    AAPLSimulation * __weak weakSelf = self;
-
     dispatch_async(globalConcurrentQueue, ^()
     {
-        _commandQueue = [_device newCommandQueue];
+        self->_commandQueue = [self->_device newCommandQueue];
 
-        do
-        {
-            _currentBufferIndex = (_currentBufferIndex + 1) % AAPLNumUpdateBuffersStored;
+        [self runAsyncLoopWithUpdateHandler:updateHandler];
 
-            id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
-
-            id<MTLBuffer> positionBuffer = [self simulateFrameWithCommandBuffer:commandBuffer];
-
-            [weakSelf fillUpdateBufferWithPositionBuffer:positionBuffer
-                                      usingCommandBuffer:commandBuffer];
-
-            // Pass data back to client to update it with a summary of progress
-            {
-                __block AAPLDataUpdateHandler block_updateHandler = updateHandler;
-                __block NSData *updateData = _updateData[_currentBufferIndex];
-                __block float updateSimulationTime =  _simulationTime;
-                [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer)
-                 {
-                     block_updateHandler(updateData, updateSimulationTime);
-                 }];
-            }
-
-            [commandBuffer commit];
-
-        } while(_simulationTime < _config->simDuration && !weakSelf.halt);
-
-        [weakSelf provideFullData:dataProvider forSimulationTime:_simulationTime];
+        [self provideFullData:dataProvider forSimulationTime:self->_simulationTime];
     });
 }
 

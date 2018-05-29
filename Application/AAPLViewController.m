@@ -434,14 +434,14 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
             void (^animationGroup)(NSAnimationContext *context) = ^(NSAnimationContext *context)
             {
                 context.duration = 0.55;
-                _simulationName.animator.alphaValue = 0.0;
-                _simulationPercentage.animator.alphaValue = 0.0;
+                self->_simulationName.animator.alphaValue = 0.0;
+                self->_simulationPercentage.animator.alphaValue = 0.0;
             };
 
             void (^animationCompletion)(void) = ^()
             {
-                _simulationName.alphaValue = 1.0;
-                _simulationPercentage.alphaValue = 1.0;
+                self->_simulationName.alphaValue = 1.0;
+                self->_simulationPercentage.alphaValue = 1.0;
             };
 
             void (^blinkyBlock)(NSTimer *timer) =  ^(NSTimer *timer)
