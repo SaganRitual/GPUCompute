@@ -241,7 +241,7 @@ static const NSUInteger AAPLGaussianMapSize = 64;
     const float near   = 5000;
     const float far    = -5000;
 
-    _projectionMatrix = matrix_ortho(left, right, bottom, top, near, far);
+    _projectionMatrix = matrix_ortho_left_hand(left, right, bottom, top, near, far);
 }
 
 /// Set the scale factor and parameters to create the projection matrix

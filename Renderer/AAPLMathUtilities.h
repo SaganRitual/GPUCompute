@@ -6,19 +6,17 @@ Header for vector, matrix, and quaternion math utility functions useful for 3D g
  rendering with Metal
 */
 
+#import <stdlib.h>
 #import <simd/simd.h>
 
 /// Since these are common methods, allow other libraries to overload the
-//   implementation of the methods here
+///   implementation of the methods here
 #define AAPL_SIMD_OVERLOAD __attribute__((__overloadable__))
-
-// Generate a random 3 component vector with values between min and max
-vector_float3 AAPL_SIMD_OVERLOAD generate_random_vector(float min, float max);
 
 /// A single-precision quaternion type
 typedef vector_float4 quaternion_float;
 
-// Given a uint16_t encoded as a 16-bit float, returns a 32-bit float
+/// Given a uint16_t encoded as a 16-bit float, returns a 32-bit float
 float AAPL_SIMD_OVERLOAD float32_from_float16(uint16_t i);
 
 // Given a 32-bit float, returns a uint16_t encoded as a 16-bit float
@@ -29,6 +27,15 @@ float AAPL_SIMD_OVERLOAD degrees_from_radians(float radians);
 
 /// Returns the number of radians in the specified number of degrees
 float AAPL_SIMD_OVERLOAD radians_from_degrees(float degrees);
+
+// Generates random float value inside given range
+inline static float AAPL_SIMD_OVERLOAD  random_float(float min, float max)
+{
+    return (((double)rand()/RAND_MAX) * (max-min)) + min;
+}
+
+/// Generate a random 3 component vector with values between min and max
+vector_float3 AAPL_SIMD_OVERLOAD generate_random_vector(float min, float max);
 
 /// Fast random seed
 void AAPL_SIMD_OVERLOAD seedRand(uint32_t seed);
@@ -48,27 +55,29 @@ vector_float4 AAPL_SIMD_OVERLOAD vector_lerp(vector_float4 v0, vector_float4 v1,
 /// Converts a unit-norm quaternion into its corresponding rotation matrix
 matrix_float3x3 AAPL_SIMD_OVERLOAD matrix3x3_from_quaternion(quaternion_float q);
 
-/// Constructs a matrix_float3x3 from 9 float values
-matrix_float3x3 AAPL_SIMD_OVERLOAD matrix_make(float m00, float m10, float m20,
-                                               float m01, float m11, float m21,
-                                               float m02, float m12, float m22);
+/// Constructs a matrix_float3x3 from 3 rows of 3 columns with float values
+/// Indices are m<column><row>
+matrix_float3x3 AAPL_SIMD_OVERLOAD matrix_make_rows(float m00, float m10, float m20,
+                                                    float m01, float m11, float m21,
+                                                    float m02, float m12, float m22);
 
-/// Constructs a matrix_float4x4 from 16 float values
-matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_make(float m00, float m10, float m20, float m30,
-                                               float m01, float m11, float m21, float m31,
-                                               float m02, float m12, float m22, float m32,
-                                               float m03, float m13, float m23, float m33);
+/// Constructs a matrix_float4x4 from 4 rows of 4 columns with float values
+/// Indices are m<column><row>
+matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_make_rows(float m00, float m10, float m20, float m30,
+                                                    float m01, float m11, float m21, float m31,
+                                                    float m02, float m12, float m22, float m32,
+                                                    float m03, float m13, float m23, float m33);
 
-/// Constructs a matrix_float3x3 from 3 vector_float3 values
-matrix_float3x3 AAPL_SIMD_OVERLOAD matrix_make(vector_float3 col0,
-                                               vector_float3 col1,
-                                               vector_float3 col2);
+/// Constructs a matrix_float3x3 from 3 vector_float3 column vectors
+matrix_float3x3 AAPL_SIMD_OVERLOAD matrix_make_columns(vector_float3 col0,
+                                                       vector_float3 col1,
+                                                       vector_float3 col2);
 
-/// Constructs a matrix_float4x4 from 4 vector_float4 values
-matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_make(vector_float4 col0,
-                                               vector_float4 col1,
-                                               vector_float4 col2,
-                                               vector_float4 col3);
+/// Constructs a matrix_float4x4 from 4 vector_float4 column vectors
+matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_make_columns(vector_float4 col0,
+                                                       vector_float4 col1,
+                                                       vector_float4 col2,
+                                                       vector_float4 col3);
 
 /// Constructs a rotation matrix from the provided angle and axis
 matrix_float3x3 AAPL_SIMD_OVERLOAD matrix3x3_rotation(float radians, vector_float3 axis);
@@ -97,6 +106,9 @@ matrix_float4x4 AAPL_SIMD_OVERLOAD matrix4x4_rotation(float radians, vector_floa
 /// Constructs a rotation matrix from the provided angle and the axis (x, y, z)
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix4x4_rotation(float radians, float x, float y, float z);
 
+/// Constructs an identity matrix
+matrix_float4x4 AAPL_SIMD_OVERLOAD matrix4x4_identity(void);
+
 /// Constructs a scaling matrix with the specified scaling factors
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix4x4_scale(float sx, float sy, float sz);
 
@@ -109,43 +121,70 @@ matrix_float4x4 AAPL_SIMD_OVERLOAD matrix4x4_translation(float tx, float ty, flo
 /// Constructs a translation matrix that translates by the vector (t.x, t.y, t.z)
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix4x4_translation(vector_float3 t);
 
-/// Constructs a view matrix that is positioned at (eyeX, eyeY, eyeZ) and looks toward
+/// Constructs a translation matrix that scales by the vector (s.x, s.y, s.z)
+/// and translates by the vector (t.x, t.y, t.z)
+matrix_float4x4 AAPL_SIMD_OVERLOAD matrix4x4_scale_translation(vector_float3 s, vector_float3 t);
+
+/// Starting with left-handed World Coordinates,
+/// constructs a view matrix that is positioned at (eyeX, eyeY, eyeZ) and looks toward
 /// (centerX, centerY, centerZ), with the vector (upX, upY, upZ) pointing up for a left-handed coordinate system
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_look_at_left_hand(float eyeX, float eyeY, float eyeZ,
-                                                              float centerX, float centerY, float centerZ,
-                                                              float upX, float upY, float upZ);
+                                                            float centerX, float centerY, float centerZ,
+                                                            float upX, float upY, float upZ);
 
-/// Constructs a view matrix that is positioned at (eye) and looks toward
+/// Starting with left-handed World Coordinates,
+/// constructs a view matrix that is positioned at (eye) and looks toward
 /// (target, with the vector (up) pointing up for a left-handed coordinate system
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_look_at_left_hand(vector_float3 eye,
                                                             vector_float3 target,
                                                             vector_float3 up);
 
-/// Constructs a view matrix that is positioned at (eyeX, eyeY, eyeZ) and looks toward
+/// Starting with right-handed World Coordinates,
+/// constructs a view matrix that is positioned at (eyeX, eyeY, eyeZ) and looks toward
 /// (centerX, centerY, centerZ), with the vector (upX, upY, upZ) pointing up for a right-handed coordinate system
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_look_at_right_hand(float eyeX, float eyeY, float eyeZ,
                                                              float centerX, float centerY, float centerZ,
                                                              float upX, float upY, float upZ);
 
-/// Constructs a view matrix that is positioned at (eye) and looks toward
+/// Starting with right-handed World Coordinates,
+/// constructs a view matrix that is positioned at (eye) and looks toward
 /// (target, with the vector (up) pointing up for a right-handed coordinate system
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_look_at_right_hand(vector_float3 eye,
                                                              vector_float3 target,
                                                              vector_float3 up);
 
-/// Constructs a symmetric orthographic projection matrix that maps (left, top) to (-1, 1),
-/// (right, bottom) to (1, -1), and (nearZ, farZ) to (0, 1)
-matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_ortho(float left, float right, float bottom, float top, float nearZ, float farZ);
+/// Constructs a symmetric orthographic Projection Matrix
+/// from left-handed Eye Coordinates to left-handed Clip Coordinates.
+/// That maps (left, top) to (-1, 1), (right, bottom) to (1, -1), and (nearZ, farZ) to (0, 1).
+/// The first four args are signed Eye Coordinates.
+/// nearZ and farZ are absolute distances from the eye to the near and far clip planes.
+matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_ortho_left_hand(float left, float right, float bottom, float top, float nearZ, float farZ);
 
-/// Constructs a symmetric perspective projection matrix for a right-handed coordinate system
-/// with a vertical viewing angle of fovyRadians, the specified aspect ratio, and the provided near
-/// and far Z distances
+/// Constructs a symmetric orthographic Projection Matrix
+/// from right-handed Eye Coordinates to left-handed Clip Coordinates.
+/// that maps (left, top) to (-1, 1), (right, bottom) to (1, -1), and (nearZ, farZ) to (0, 1).
+/// The first four args are signed Eye Coordinates.
+/// nearZ and farZ are absolute distances from the eye to the near and far clip planes.
+matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_ortho_right_hand(float left, float right, float bottom, float top, float nearZ, float farZ);
+
+/// Constructs a symmetric perspective Projection Matrix
+/// from left-handed Eye Coordinates to left-handed Clip Coordinates,
+/// with a vertical viewing angle of fovyRadians, the specified aspect ratio,
+/// and the provided absolute near and far Z distances from the eye.
+matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_perspective_left_hand(float fovyRadians, float aspect, float nearZ, float farZ);
+
+/// Constructs a symmetric perspective Projection Matrix
+/// from right-handed Eye Coordinates to left-handed Clip Coordinates,
+/// with a vertical viewing angle of fovyRadians, the specified aspect ratio,
+/// and the provided absolute near and far Z distances from the eye.
 matrix_float4x4  AAPL_SIMD_OVERLOAD matrix_perspective_right_hand(float fovyRadians, float aspect, float nearZ, float farZ);
 
-/// Constructs a symmetric perspective projection matrix for a left-handed coordinate system
-/// with a vertical viewing angle of fovyRadians, the specified aspect ratio, and the provided near
-/// and far Z distances
-matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_perspective_left_hand(float fovyRadians, float aspect, float nearZ, float farZ);
+/// Construct a general frustum Projection Matrix
+/// from right-handed Eye Coordinates to left-handed Clip Coordinates.
+/// The bounds: left, right, bottom, and top, define the visible frustum at the near clip plane.
+/// The first four args are signed Eye Coordinates.
+/// nearZ and farZ are absolute distances from the eye to the near and far clip planes.
+matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_perspective_frustum_right_hand(float left, float right, float bottom, float top, float nearZ, float farZ);
 
 /// Returns the inverse of the transpose of the provided matrix
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_inverse_transpose(matrix_float4x4 m);

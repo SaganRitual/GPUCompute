@@ -9,8 +9,6 @@ Implementation of the macOS view controller
 #import "AAPLRenderer.h"
 #import "AAPLSimulation.h"
 
-#include <pthread.h>
-
 // Enum indicating reason for execution of Metal device notification handler block
 typedef enum AAPLHotPlugEvent {
     AAPLHotPlugEventDeviceAdded,

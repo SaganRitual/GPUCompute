@@ -22,8 +22,8 @@ typedef struct
 } ColorInOut;
 
 vertex ColorInOut vertexShader(uint                    vertexID  [[ vertex_id ]],
-                               device float4         * position  [[ buffer(AAPLRenderBufferIndexPositions) ]],
-                               device uchar4         * color     [[ buffer(AAPLRenderBufferIndexColors)    ]],
+                               const device float4*    position  [[ buffer(AAPLRenderBufferIndexPositions) ]],
+                               const device uchar4*    color     [[ buffer(AAPLRenderBufferIndexColors)    ]],
                                constant AAPLUniforms & uniforms  [[ buffer(AAPLRenderBufferIndexUniforms)  ]])
 {
     ColorInOut out;
