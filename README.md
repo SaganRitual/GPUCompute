@@ -1,6 +1,6 @@
-# Device Selection and Fallback for Compute Processing
+# Selecting Device Objects for Compute Processing
 
-Demonstrates how to work with multiple GPUs and efficiently execute a compute-intensive simulation.
+Switch dynamically between multiple GPUs to efficiently execute a compute-intensive simulation.
 
 ## Overview
 
@@ -40,7 +40,7 @@ When the sample receives a notification for an external GPU removal, it transfer
 
 When the sample receives a notification for an external GPU addition, it first completes the current simulation with the built-in GPU and then starts the next simulation with the external GPU.
 
-This sample implements many techniques described in the [Device Selection and Fallback for Graphics Rendering](https://developer.apple.com/documentation/metal/choosing_gpus_on_mac/device_selection_and_fallback_for_graphics_rendering) sample. For information about handling external GPU notifications, see the following sections from that sample:
+This sample implements many techniques described in Selecting Device Objects for Graphics Rendering. For information about handling external GPU notifications, see the following sections from that sample:
 
 * Set a GPU Eject Policy
 
