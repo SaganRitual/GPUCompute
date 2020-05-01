@@ -22,12 +22,12 @@ typedef enum AAPLHotPlugEvent {
 static const AAPLSimulationConfig AAPLSimulationConfigTable[] =
 {
     // damping softening numBodies clusterScale velocityScale renderScale renderBodies simInterval simDuration
-    {      1.0,    1.000,    65536,        1.54,            8,       25.0,        8192,     0.0160,        2.0 },
-    {      1.0,    1.000,    65536,        0.32,          276,        2.5,        8192,     0.0006,        0.3 },
-    {      1.0,    0.100,    65536,        0.68,           20,     1700.0,        8192,     0.0160,        3.0 },
-    {      1.0,    1.000,    65536,        1.54,            8,       25.0,        8192,     0.0160,        3.0 },
-    {      1.0,    1.000,    65536,        6.04,            0,      300.0,        8192,     0.0160,        3.0 },
-    {      1.0,    0.145,    65536,        0.32,          272,        2.5,        8192,     0.0006,        0.3 },
+    {      1.0,    1.000,    16384,        1.54,            8,       25.0,        16384,     0.0160,        5.0 },
+    {      1.0,    1.000,    16384,        0.32,          276,        2.5,        16384,     0.0006,        5.0 },
+    {      1.0,    0.100,    16384,        0.68,           20,     1700.0,        16384,     0.0160,        5.0 },
+    {      1.0,    1.000,    16384,        1.54,            8,       25.0,        16384,     0.0160,        5.0 },
+    {      1.0,    1.000,    16384,        6.04,            0,      300.0,        16384,     0.0160,        5.0 },
+    {      1.0,    0.145,    16384,        0.32,          272,        2.5,        16384,     0.0006,        5.0 },
 };
 
 static const NSUInteger AAPLNumSimulationConfigs = sizeof(AAPLSimulationConfigTable) / sizeof(AAPLSimulationConfig);
@@ -153,25 +153,7 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
 
     // Select compute device
     {
-        _computeDevice = MTLCreateSystemDefaultDevice();
-
-        for(id<MTLDevice> device in availableDevices)
-        {
-            if(device.isRemovable)
-            {
-                // Select removable device if available since if there is one, it's probably the most
-                // powerful device available
-                _computeDevice = device;
-                break;
-            }
-            else if(device.isHeadless)
-            {
-                // Select headless device since if there is one it's probably dedicated to compute
-                // tasks
-                _computeDevice = device;
-            }
-        }
-
+        _computeDevice = availableDevices[1];
         NSLog(@"Selected compute device: %@", _computeDevice.name);
     }
 
@@ -180,7 +162,7 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
         // Query for device driving the display
         CGDirectDisplayID viewDisplayID = (CGDirectDisplayID) [_view.window.screen.deviceDescription[@"NSScreenNumber"] unsignedIntegerValue];
 
-        id<MTLDevice> rendererDevice = CGDirectDisplayCopyCurrentMetalDevice(viewDisplayID);
+        id<MTLDevice> rendererDevice = availableDevices[0];
 
         if(rendererDevice != _view.device)
         {
