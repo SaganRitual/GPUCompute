@@ -9,25 +9,21 @@ Implementation of the macOS view controller
 #import "AAPLRenderer.h"
 #import "AAPLSimulation.h"
 
-// Enum indicating reason for execution of Metal device notification handler block
-typedef enum AAPLHotPlugEvent {
-    AAPLHotPlugEventDeviceAdded,
-    AAPLHotPlugEventDeviceEjected,
-    AAPLHotPlugEventDevicePulled,
-} AAPLHotPlugEvent;
-
 // Table with various simulation configurations.  Apps would typically load simulation parameters
 // such as these from a file or UI controls, but to simplify the sample and focus on Metal usage,
 // this table is hardcoded
+static const float frameTime = 1.0 / 60.0;
+static const float second = frameTime * 60.0;
+static const float metersPerSecond = 600.0;
 static const AAPLSimulationConfig AAPLSimulationConfigTable[] =
 {
     // damping softening numBodies clusterScale velocityScale renderScale renderBodies simInterval simDuration
-    {      1.0,    1.000,    16384,        1.54,            8,       25.0,        16384,     0.0160,        5.0 },
-    {      1.0,    1.000,    16384,        0.32,          276,        2.5,        16384,     0.0006,        5.0 / 27.0 },
-    {      1.0,    0.100,    16384,        0.68,           20,     1700.0,        16384,     0.0160,        5.0 },
-    {      1.0,    1.000,    16384,        1.54,            8,       25.0,        16384,     0.0160,        5.0 },
-    {      1.0,    1.000,    16384,        6.04,            0,      300.0,        16384,     0.0160,        5.0 },
-    {      1.0,    0.145,    16384,        0.32,          272,        2.5,        16384,     0.0006,        5.0 / 27.0 },
+    {      1.0,    1.000,    4096,        0.32,          metersPerSecond / 30,        2.5,        4096,     frameTime / 30,        10.0 * second / 30},
+    {      1.0,    1.000,    4096,        6.04,            0,      75,        4096,     frameTime,        10.0 * second },
+    {      1.0,    0.145,    4096,        0.32,          metersPerSecond / 30,        2.5,        4096,     frameTime / 30,        10.0 * second / 30},
+    {      1.0,    1.000,    4096,        1.54,            metersPerSecond / 30,       75.0,        4096,      frameTime,       10.0 * second },
+    {      1.0,    0.100,    4096,        0.68,           metersPerSecond / 30,     1000,        4096,     frameTime,        10.0 * second },
+    {      1.0,    1.000,    4096,        1.54,            metersPerSecond / 30,       75.0,        4096,     frameTime,        10.0 * second },
 };
 
 const NSInteger IntelGPUInMetalDevicesArray = 0;
@@ -45,21 +41,12 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
 
     AAPLSimulation *_simulation;
 
-    id<NSObject> _metalDeviceObserver;
-
     // The current time (in simulation time units) that the simulation has processed
     CFAbsoluteTime _simulationTime;
 
     // When rendering is paused (such as immediately after a simulation has completed), the time
     // to unpause and continue simulations.
     CFAbsoluteTime _continuationTime;
-
-    // If non-null, the device a hot-plug notification refers to
-    id<MTLDevice> _hotPlugDevice;
-
-    // If _hotPlugDevice is non-null, the type of hot-plug notification received.  Only valid if
-    // _hotPlugDevice is non-null.
-    AAPLHotPlugEvent _hotPlugEvent;
 
     id<MTLDevice> _computeDevice;
 
@@ -107,8 +94,6 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
 
 - (void)viewDidDisappear
 {
-    MTLRemoveDeviceObserver(_metalDeviceObserver);
-
     @synchronized(self)
     {
         // Stop simulation if on another thread
@@ -123,35 +108,13 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
 {
     NSArray<id<MTLDevice>> * availableDevices = nil;
 
-    // Query for available devices and set observer block
+    availableDevices = MTLCopyAllDevices();
+
+    if(availableDevices == nil || ([availableDevices count] == 0))
     {
-
-        AAPLViewController * __weak controller = self;
-
-        MTLDeviceNotificationHandler notificationHandler;
-
-        notificationHandler = ^(id<MTLDevice> device, MTLDeviceNotificationName name)
-        {
-            [controller markHotPlugNotificationForDevice:device name:name];
-        };
-
-        // Query all supported metal devices with observer so app can get external device add/remove notifications
-        id<NSObject> metalDeviceObserver = nil;
-
-        availableDevices = MTLCopyAllDevicesWithObserver(&metalDeviceObserver,
-                                                         notificationHandler);
-
-        if(availableDevices == nil || ([availableDevices count] == 0))
-        {
-            assert(!"Metal is not supported on this Mac");
-            self.view = [[NSView alloc] initWithFrame:self.view.frame];
-            return;
-        }
-
-        MTLRemoveDeviceObserver(_metalDeviceObserver);
-
-        // Save observer reference so we can remove observer upon exit
-        _metalDeviceObserver = metalDeviceObserver;
+        assert(!"Metal is not supported on this Mac");
+        self.view = [[NSView alloc] initWithFrame:self.view.frame];
+        return;
     }
 
     // Select compute device
@@ -159,30 +122,26 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
     // performance. If we use the AMD for either, or even for both, we get
     // truly astonishing performance. Using the Intel chip for rendering is
     // slightly choppy, a little slower than simply using the AMD for both
-    {
-        _computeDevice = availableDevices[RadeonGPUInMetalDevicesArray];
-        NSLog(@"Selected compute device: %@", _computeDevice.name);
-    }
+    _computeDevice = availableDevices[RadeonGPUInMetalDevicesArray];
+    NSLog(@"Selected compute device: %@", _computeDevice.name);
 
-    {
-        id<MTLDevice> rendererDevice = availableDevices[RadeonGPUInMetalDevicesArray];
+    id<MTLDevice> rendererDevice = availableDevices[RadeonGPUInMetalDevicesArray];
 
-        if(rendererDevice != _view.device)
+    if(rendererDevice != _view.device)
+    {
+        _view.device = rendererDevice;
+
+        NSLog(@"New render device: %@", _view.device.name);
+
+        _renderer = [[AAPLRenderer alloc] initWithMetalKitView:_view];
+
+        if(!_renderer)
         {
-            _view.device = rendererDevice;
-
-            NSLog(@"New render device: %@", _view.device.name);
-
-            _renderer = [[AAPLRenderer alloc] initWithMetalKitView:_view];
-
-            if(!_renderer)
-            {
-                NSLog(@"Renderer failed initialization");
-                return;
-            }
-
-            [self mtkView:_view drawableSizeWillChange:_view.drawableSize];
+            NSLog(@"Renderer failed initialization");
+            return;
         }
+
+        [self mtkView:_view drawableSizeWillChange:_view.drawableSize];
     }
 }
 
@@ -229,17 +188,7 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
                       forSimulationTime:simulationTime];
     };
 
-    AAPLFullDatasetProvider dataProvider = ^(NSData * __nonnull positionData,
-                                             NSData * __nonnull velocityData,
-                                             CFAbsoluteTime simulationTime)
-    {
-        [self handleFullyProvidedSetOfPositionData:positionData
-                                      velocityData:velocityData
-                                 forSimulationTime:simulationTime];
-    };
-
-    [_simulation runAsyncWithUpdateHandler:updateHandler
-                              dataProvider:dataProvider];
+    [_simulation runAsyncWithUpdateHandler:updateHandler];
 }
 
 /// Receive and update of new positions for the simulation time given.
@@ -315,78 +264,6 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
     }
 }
 
-/// Called by Metal whenever external GPU is added or removed.  This is not necessarily executed
-//  on the main thread, so only mark the event, but don't fully respond to it
-- (void)markHotPlugNotificationForDevice:(nonnull id<MTLDevice>)device
-                                    name:(nonnull MTLDeviceNotificationName)name
-{
-    // Synchronize around _hotPlugEvent and _hotPlugDevice since they are read on another thread
-    @synchronized(self)
-    {
-        if ([name isEqualToString:MTLDeviceWasAddedNotification])
-        {
-            _hotPlugEvent = AAPLHotPlugEventDeviceAdded;
-            NSLog(@"Hot Plug Notification Device Added");
-        }
-        else if ([name isEqualToString:MTLDeviceRemovalRequestedNotification])
-        {
-            _hotPlugEvent = AAPLHotPlugEventDeviceEjected;
-            NSLog(@"Hot Plug Notification Device Ejected");
-        }
-        else if ([name isEqualToString:MTLDeviceWasRemovedNotification])
-        {
-            _hotPlugEvent = AAPLHotPlugEventDevicePulled;
-            NSLog(@"Hot Plug Notification Device Pulled");
-        }
-
-        _hotPlugDevice = device;
-    }
-}
-
-/// Deal with the hot plug even on the main thread
-- (void)handlePossibleHotPlugEvent
-{
-    AAPLHotPlugEvent hotPlugEvent;
-    id<MTLDevice> hotPlugDevice;
-
-    // Synchronize around _hotPlugEvent and _hotPlugDevice since are written on another thread
-    @synchronized(self)
-    {
-        hotPlugEvent = _hotPlugEvent;
-        hotPlugDevice = _hotPlugDevice;
-        _hotPlugDevice = nil;
-    }
-    if(hotPlugDevice == _computeDevice)
-    {
-        if(hotPlugEvent == AAPLHotPlugEventDeviceEjected)
-        {
-            NSLog(@"Compute Hot Plug Device Ejection for %@", hotPlugDevice.name);
-            // Halt simulation (occurring on another thread )that it must stop due to its device
-            // getting ejected.
-            // Note that when the simulation is halted, it will call back to the view controller
-            // which will create a new simulation with a new device. (So no need to select a
-            // new compute device now)
-            _simulation.halt = YES;
-        }
-        else if(hotPlugEvent == AAPLHotPlugEventDevicePulled)
-        {
-            NSLog(@"Compute Hot Plug Device Pulled for %@", hotPlugDevice.name);
-            // Halt simulation (occurring on another thread ) since device no longer attached and
-            // Metal commands will be sent to oblivion.
-            // Note that when the simulation is halted, it will call back to the view controller
-            // which will create a new simulation with a new device. (So no need to select a
-            // new compute device now)
-            _simulation.halt = YES;
-
-            // If the device is gone, there is no opportunity to transfer results back so restart
-            // the simulation.  (A more robust implementation would occasionally save all simulation
-            // data and restart the simulation with that intermediate data instead fully restarting
-            // the simulation)
-            _restartSimulation = YES;
-        }
-    }
-}
-
 /// Called whenever view changes orientation or layout is changed
 - (void)mtkView:(nonnull MTKView *)view drawableSizeWillChange:(CGSize)size
 {
@@ -396,8 +273,6 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
 /// Called whenever the view needs to render
 - (void)drawInMTKView:(MTKView *)view
 {
-    [self handlePossibleHotPlugEvent];
-
     // Number of bodies to render this frame
     NSUInteger numBodies = _config->renderBodies;
 

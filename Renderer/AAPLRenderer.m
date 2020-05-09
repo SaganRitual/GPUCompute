@@ -13,8 +13,10 @@ Implementation of renderer class which performs Metal setup and per frame render
 // Include header shared between C code here, which executes Metal API commands, and .metal files
 #import "AAPLShaderTypes.h"
 
-// The max number of command buffers in flight
-static const NSUInteger AAPLMaxRenderBuffersInFlight = 3;
+// The max number of command buffers in flight -- this seems not to matter
+// in the slightest to the simulation; I've set it as high as 5000 and never
+// seen any difference from a value of 1
+static const NSUInteger AAPLMaxRenderBuffersInFlight = 1;
 
 // The point size (in pixels) of rendered bodied
 static const float AAPLBodyPointSize = 15;

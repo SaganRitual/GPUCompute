@@ -12,7 +12,7 @@ Implementation of the class responsible for executing the N-Body simulation, pro
 // Store 3 updates worth of data before overwriting one (If one is written to at the same time the
 // renderer reads from it, the renderer could draw particles from 2 different frames, but this is
 // probably an unnoticeable rendering artifact.)
-static const NSUInteger AAPLNumUpdateBuffersStored = 3;
+static const NSUInteger AAPLNumUpdateBuffersStored = 1;
 
 /// Utility function providing a random with which to initialize simulation
 static vector_float3 generate_random_normalized_vector(float min, float max, float minlength)
@@ -305,111 +305,6 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
     [blitEncoder endEncoding];
 }
 
-/// Blit all positions and velocities and provide them to the client either to show final results
-/// or continue the simulation on another device
-- (void)provideFullData:(nonnull AAPLFullDatasetProvider)dataProvider
-      forSimulationTime:(CFAbsoluteTime)time
-{
-    NSUInteger positionDataSize = _positions[_oldBufferIndex].length;
-    NSUInteger velocityDataSize = _velocities[_oldBufferIndex].length;
-    void *positionDataAddress = NULL;
-    void *velocityDataAddress = NULL;
-
-    // Create buffers to transfer data to client
-    {
-        // Use vm allocate to allocate buffer on page aligned address
-        kern_return_t err;
-
-        err = vm_allocate((vm_map_t)mach_task_self(),
-                          (vm_address_t*)&positionDataAddress,
-                          positionDataSize,
-                          VM_FLAGS_ANYWHERE);
-        assert(err == KERN_SUCCESS);
-
-        err = vm_allocate((vm_map_t)mach_task_self(),
-                          (vm_address_t*)&velocityDataAddress,
-                          velocityDataSize,
-                          VM_FLAGS_ANYWHERE);
-        assert(err == KERN_SUCCESS);
-    }
-
-    // Blit positions and velocities to a buffer for transfer
-    {
-        id<MTLBuffer> positionBuffer = [_device newBufferWithBytesNoCopy:positionDataAddress
-                                                                  length:positionDataSize
-                                                                 options:MTLResourceStorageModeShared
-                                                             deallocator:nil];
-
-        positionBuffer.label = @"Final Positions Buffer";
-
-        id<MTLBuffer> velocityBuffer = [_device newBufferWithBytesNoCopy:velocityDataAddress
-                                                                  length:velocityDataSize
-                                                                 options:MTLResourceStorageModeShared
-                                                             deallocator:nil];
-
-        velocityBuffer.label = @"Final Velocities Buffer";
-
-        id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
-        commandBuffer.label = @"Full Transfer Command Buffer";
-
-        id<MTLBlitCommandEncoder> blitEncoder = [commandBuffer blitCommandEncoder];
-
-        blitEncoder.label = @"Full Transfer Blits";
-
-        [blitEncoder pushDebugGroup:@"Full Position Data Blit"];
-
-        [blitEncoder copyFromBuffer:_positions[_oldBufferIndex]
-                       sourceOffset:0
-                           toBuffer:positionBuffer
-                  destinationOffset:0
-                               size:positionBuffer.length];
-
-        [blitEncoder popDebugGroup];
-
-        [blitEncoder pushDebugGroup:@"Full Velocity Data Blit"];
-
-        [blitEncoder copyFromBuffer:_velocities[_oldBufferIndex]
-                       sourceOffset:0
-                           toBuffer:velocityBuffer
-                  destinationOffset:0
-                               size:velocityBuffer.length];
-
-        [blitEncoder popDebugGroup];
-
-        [blitEncoder endEncoding];
-
-        [commandBuffer commit];
-
-        // Ensure blit of data is complete before providing the data to the client
-        [commandBuffer waitUntilCompleted];
-    }
-
-    // Wrap the memory allocated with vm_allocate with a NSData object which will allow the app to
-    // rely on ObjC ARC (or even MMR) to manage the memory's lifetime. Initialize NSData object
-    // with a deallocation block to free the vm_allocated memory when the object has been
-    // deallocated
-    {
-        // Block to dealloc memory created with vm_allocate
-        void (^deallocProvidedAddress)(void *bytes, NSUInteger length) =
-            ^(void *bytes, NSUInteger length)
-            {
-                vm_deallocate((vm_map_t)mach_task_self(),
-                              (vm_address_t)bytes,
-                              length);
-            };
-
-        NSData *positionData = [[NSData alloc] initWithBytesNoCopy:positionDataAddress
-                                                            length:positionDataSize
-                                                       deallocator:deallocProvidedAddress];
-
-        NSData *velocityData = [[NSData alloc] initWithBytesNoCopy:velocityDataAddress
-                                                            length:velocityDataSize
-                                                       deallocator:deallocProvidedAddress];
-
-        dataProvider(positionData, velocityData, time);
-    }
-}
-
 /// Run a frame of the simulation with the given command buffer (used both when simulation is run
 /// synchronously or asynchronously)
 - (nonnull id<MTLBuffer>)simulateFrameWithCommandBuffer:(nonnull id<MTLCommandBuffer>)commandBuffer
@@ -461,17 +356,6 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
         [self fillUpdateBufferWithPositionBuffer:positionBuffer
                                   usingCommandBuffer:commandBuffer];
 
-        // Pass data back to client to update it with a summary of progress
-        {
-            __block AAPLDataUpdateHandler block_updateHandler = updateHandler;
-            __block NSData *updateData = _updateData[_currentBufferIndex];
-            __block float updateSimulationTime = _simulationTime;
-            [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer)
-             {
-                 block_updateHandler(updateData, updateSimulationTime);
-             }];
-        }
-
         [commandBuffer commit];
 
     } while(_simulationTime < _config->simDuration && !self.halt);
@@ -479,7 +363,6 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
 
 /// Run the simulation asynchronously on a separate thread
 - (void)runAsyncWithUpdateHandler:(nonnull AAPLDataUpdateHandler)updateHandler
-                     dataProvider:(nonnull AAPLFullDatasetProvider)dataProvider
 {
     dispatch_queue_t globalConcurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
 
@@ -488,8 +371,6 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
         self->_commandQueue = [self->_device newCommandQueue];
 
         [self runAsyncLoopWithUpdateHandler:updateHandler];
-
-        [self provideFullData:dataProvider forSimulationTime:self->_simulationTime];
     });
 }
 
