@@ -23,12 +23,15 @@ static const AAPLSimulationConfig AAPLSimulationConfigTable[] =
 {
     // damping softening numBodies clusterScale velocityScale renderScale renderBodies simInterval simDuration
     {      1.0,    1.000,    16384,        1.54,            8,       25.0,        16384,     0.0160,        5.0 },
-    {      1.0,    1.000,    16384,        0.32,          276,        2.5,        16384,     0.0006,        5.0 },
+    {      1.0,    1.000,    16384,        0.32,          276,        2.5,        16384,     0.0006,        5.0 / 27.0 },
     {      1.0,    0.100,    16384,        0.68,           20,     1700.0,        16384,     0.0160,        5.0 },
     {      1.0,    1.000,    16384,        1.54,            8,       25.0,        16384,     0.0160,        5.0 },
     {      1.0,    1.000,    16384,        6.04,            0,      300.0,        16384,     0.0160,        5.0 },
-    {      1.0,    0.145,    16384,        0.32,          272,        2.5,        16384,     0.0006,        5.0 },
+    {      1.0,    0.145,    16384,        0.32,          272,        2.5,        16384,     0.0006,        5.0 / 27.0 },
 };
+
+const NSInteger IntelGPUInMetalDevicesArray = 0;
+const NSInteger RadeonGPUInMetalDevicesArray = 1;
 
 static const NSUInteger AAPLNumSimulationConfigs = sizeof(AAPLSimulationConfigTable) / sizeof(AAPLSimulationConfig);
 
@@ -152,17 +155,17 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
     }
 
     // Select compute device
+    // If we use the Intel GPU for both compute and render, we get really bad
+    // performance. If we use the AMD for either, or even for both, we get
+    // truly astonishing performance. Using the Intel chip for rendering is
+    // slightly choppy, a little slower than simply using the AMD for both
     {
-        _computeDevice = availableDevices[1];
+        _computeDevice = availableDevices[RadeonGPUInMetalDevicesArray];
         NSLog(@"Selected compute device: %@", _computeDevice.name);
     }
 
-    // Select renderer device (stored as _view.device)
     {
-        // Query for device driving the display
-        CGDirectDisplayID viewDisplayID = (CGDirectDisplayID) [_view.window.screen.deviceDescription[@"NSScreenNumber"] unsignedIntegerValue];
-
-        id<MTLDevice> rendererDevice = availableDevices[0];
+        id<MTLDevice> rendererDevice = availableDevices[RadeonGPUInMetalDevicesArray];
 
         if(rendererDevice != _view.device)
         {
