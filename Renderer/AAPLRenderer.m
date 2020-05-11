@@ -13,11 +13,6 @@ Implementation of renderer class which performs Metal setup and per frame render
 // Include header shared between C code here, which executes Metal API commands, and .metal files
 #import "AAPLShaderTypes.h"
 
-// The max number of command buffers in flight -- this seems not to matter
-// in the slightest to the simulation; I've set it as high as 5000 and never
-// seen any difference from a value of 1
-static const NSUInteger AAPLMaxRenderBuffersInFlight = 1;
-
 // The point size (in pixels) of rendered bodied
 static const float AAPLBodyPointSize = 15;
 
@@ -27,8 +22,6 @@ static const NSUInteger AAPLGaussianMapSize = 64;
 // Main class performing the rendering
 @implementation AAPLRenderer
 {
-    dispatch_semaphore_t _inFlightSemaphore;
-
     id<MTLTexture> _gaussianMap;
 
     id<MTLCommandQueue> _commandQueue;
@@ -37,7 +30,7 @@ static const NSUInteger AAPLGaussianMapSize = 64;
 
     // Metal objects
     id<MTLBuffer> _positionsBuffer;
-    id<MTLBuffer> _dynamicUniformBuffers[AAPLMaxRenderBuffersInFlight];
+    id<MTLBuffer> _dynamicUniformBuffer;
     id<MTLRenderPipelineState> _renderPipeline;
     id<MTLDepthStencilState> _depthState;
 
@@ -59,7 +52,6 @@ static const NSUInteger AAPLGaussianMapSize = 64;
     {
         _device = mtkView.device;
 
-        _inFlightSemaphore = dispatch_semaphore_create(AAPLMaxRenderBuffersInFlight);
         [self loadMetal:mtkView];
         [self generateGaussianMap];
     }
@@ -88,37 +80,35 @@ static const NSUInteger AAPLGaussianMapSize = 64;
     // used to fill the texture's memory
     NSUInteger dataSize = textureDescriptor.width  * textureDescriptor.height  * sizeof(uint8_t);
 
-    const vector_float2 nDelta = { 2.0 / (float)textureDescriptor.width, 2.0 /(float) textureDescriptor.height};
+    const vector_float2 nDelta = simd_make_float2(
+        2.0 / (float)textureDescriptor.width,
+        2.0 / (float)textureDescriptor.height
+    );
 
     uint8_t* texelData = (uint8_t*) malloc(dataSize);
-    uint8_t* texel = texelData;
-
-    vector_float2 SNormCoordinate = -1.0;
 
     int i = 0;
 
     // Procedurally generate data to fill the texture's buffer
     for(uint32_t y = 0; y < textureDescriptor.height; y++)
     {
-        SNormCoordinate.y = -1.0 + y * nDelta.y;
+        float const sNormY = -1.0 + y * nDelta.y;
 
         for(uint32_t x = 0; x < textureDescriptor.width; x++)
         {
-            SNormCoordinate.x = -1.0 + x * nDelta.x;
+            float const sNormX = -1.0 + x * nDelta.x;
 
-            float distance = vector_length(SNormCoordinate);
-            float t = (distance  < 1.0f) ? distance : 1.0f;
+            vector_float2 const sNormVector = simd_make_float2(sNormX, sNormY);
+            float const h = MIN(1.0f, vector_length(sNormVector));
 
             // Hermite interpolation where u = {1, 0} and v = {0, 0}
-            float color = ((2.0f * t - 3.0f) * t * t + 1.0f);
+            float const color = (2.0f * h - 3.0f) * h * h + 1.0f;
 
-            texel[i] = 0xFF * color;
+            texelData[i] = 0xFF * color;
 
             i++;
         }
     }
-
-    free(texelData);
 
     MTLRegion region = {{ 0, 0, 0 }, {textureDescriptor.width, textureDescriptor.height, 1}};
 
@@ -133,6 +123,8 @@ static const NSUInteger AAPLGaussianMapSize = 64;
     }
 
     _gaussianMap.label = @"Gaussian Map";
+
+    free(texelData);
 }
 
 /// Create the Metal render state objects including shaders and render state pipeline objects
@@ -182,20 +174,13 @@ static const NSUInteger AAPLGaussianMapSize = 64;
     depthStateDesc.depthWriteEnabled = YES;
     _depthState = [_device newDepthStencilStateWithDescriptor:depthStateDesc];
 
-    // Create and allocate the dynamic uniform buffer objects.
-    for(NSUInteger i = 0; i < AAPLMaxRenderBuffersInFlight; i++)
-    {
-        // Indicate shared storage so that both the  CPU can access the buffers
-        const MTLResourceOptions storageMode = MTLResourceStorageModeShared;
+    // Indicate shared storage so that both the  CPU can access the buffers
+    const MTLResourceOptions storageMode = MTLResourceStorageModeShared;
 
-        _dynamicUniformBuffers[i] = [_device newBufferWithLength:sizeof(AAPLUniforms)
-                                                  options:storageMode];
+    _dynamicUniformBuffer = [_device newBufferWithLength:sizeof(AAPLUniforms)
+                                              options:storageMode];
 
-        _dynamicUniformBuffers[i].label = [NSString stringWithFormat:@"UniformBuffer%lu", i];
-    }
-
-    // Initialize number of bodies to render
-    [self setNumRenderBodies:65536];
+    _dynamicUniformBuffer.label = @"UniformBuffer";
 
      _commandQueue = [_device newCommandQueue];
 }
@@ -257,16 +242,16 @@ static const NSUInteger AAPLGaussianMapSize = 64;
 /// Update the projection matrix with a new drawable size
 - (void)drawableSizeWillChange:(CGSize)size
 {
-    [self updateProjectionMatrixWithSize:size];
+//    [self updateProjectionMatrixWithSize:size];
 }
 
 /// Update any render state (including updating dynamically changing Metal buffers)
 - (void)updateState
 {
-    AAPLUniforms *uniforms = (AAPLUniforms *)_dynamicUniformBuffers[_currentBufferIndex].contents;
+    AAPLUniforms *contents = (AAPLUniforms *)_dynamicUniformBuffer.contents;
 
-    uniforms->pointSize = AAPLBodyPointSize;
-    uniforms->mvpMatrix = _projectionMatrix;
+    contents->pointSize = AAPLBodyPointSize;
+    contents->mvpMatrix = _projectionMatrix;
 }
 
 /// Called to provide positions data to be rendered on the next frame
@@ -300,21 +285,7 @@ static const NSUInteger AAPLGaussianMapSize = 64;
                     numBodies:(NSUInteger)numBodies
                        inView:(nonnull MTKView *)view
 {
-    // Wait to ensure only AAPLMaxRenderBuffersInFlight are getting processed by any stage in the Metal
-    // pipeline (App, Metal, Drivers, GPU, etc)
-    dispatch_semaphore_wait(_inFlightSemaphore, DISPATCH_TIME_FOREVER);
-
     [commandBuffer pushDebugGroup:@"Draw Simulation Data"];
-
-    // Add completion hander which signals _inFlightSemaphore when Metal and the GPU has fully
-    // finished processing the commands encoded this frame.  This indicates when the dynamic
-    // buffers, written to this frame, will no longer be needed by Metal and the GPU, meaning the
-    // buffer contents can be changed without corrupting rendering
-    __block dispatch_semaphore_t block_sema = _inFlightSemaphore;
-    [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> buffer)
-     {
-         dispatch_semaphore_signal(block_sema);
-     }];
 
     [self setNumRenderBodies:numBodies];
 
@@ -346,7 +317,7 @@ static const NSUInteger AAPLGaussianMapSize = 64;
             [renderEncoder setVertexBuffer:_colors
                                     offset:0 atIndex:AAPLRenderBufferIndexColors];
 
-            [renderEncoder setVertexBuffer:_dynamicUniformBuffers[_currentBufferIndex]
+            [renderEncoder setVertexBuffer:_dynamicUniformBuffer
                                     offset:0 atIndex:AAPLRenderBufferIndexUniforms];
 
             [renderEncoder setFragmentTexture:_gaussianMap atIndex:AAPLTextureIndexColorMap];

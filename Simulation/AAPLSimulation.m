@@ -9,11 +9,6 @@ Implementation of the class responsible for executing the N-Body simulation, pro
 #import "AAPLKernelTypes.h"
 #import "AAPLMathUtilities.h"
 
-// Store 3 updates worth of data before overwriting one (If one is written to at the same time the
-// renderer reads from it, the renderer could draw particles from 2 different frames, but this is
-// probably an unnoticeable rendering artifact.)
-static const NSUInteger AAPLNumUpdateBuffersStored = 1;
-
 /// Utility function providing a random with which to initialize simulation
 static vector_float3 generate_random_normalized_vector(float min, float max, float minlength)
 {
@@ -34,13 +29,10 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
     id<MTLComputePipelineState> _computePipeline;
 
     // Metal buffer backed with memory wrapped in an NSData object for updating client (renderer)
-    id<MTLBuffer> _updateBuffer[AAPLNumUpdateBuffersStored];
+    id<MTLBuffer> _updateBuffer;
 
     // Wrapper for system memory used to transfer to client (renderer)
-    NSData *_updateData[AAPLNumUpdateBuffersStored];
-
-    // Current buffer to write update simulation data to
-    NSUInteger _currentBufferIndex;
+    NSData *_updateData;
 
     // Two buffers to hold positions and velocity.  One will hold data for the previous/initial
     // frame while the other will hold data for the current frame, which is generated using data
@@ -171,43 +163,40 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
     {
         NSUInteger updateDataSize = _config->renderBodies * sizeof(vector_float3);
 
-        for(NSUInteger i = 0; i < AAPLNumUpdateBuffersStored; i++)
-        {
-            // Allocate buffer with page aligned address
-            void *updateAddress;
-            kern_return_t err = vm_allocate((vm_map_t)mach_task_self(),
-                                            (vm_address_t*)&updateAddress,
-                                            updateDataSize,
-                                            VM_FLAGS_ANYWHERE);
+        // Allocate buffer with page aligned address
+        void *updateAddress;
+        kern_return_t err = vm_allocate((vm_map_t)mach_task_self(),
+                                        (vm_address_t*)&updateAddress,
+                                        updateDataSize,
+                                        VM_FLAGS_ANYWHERE);
 
-            assert(err == KERN_SUCCESS);
+        assert(err == KERN_SUCCESS);
 
-            _updateBuffer[i] = [_device newBufferWithBytesNoCopy:updateAddress
-                                                          length:updateDataSize
-                                                         options:MTLResourceStorageModeShared
-                                                     deallocator:nil];
+        _updateBuffer = [_device newBufferWithBytesNoCopy:updateAddress
+                                                      length:updateDataSize
+                                                     options:MTLResourceStorageModeShared
+                                                 deallocator:nil];
 
-            _updateBuffer[i].label = [NSString stringWithFormat:@"Update Buffer%lu", i];
+        _updateBuffer.label = @"Update Buffer";
 
-            // Wrap the memory allocated with vm_allocate with an NSData object which will allow
-            // use to rely on ObjC ARC (or even MMR) to manage the memory's lifetime
+        // Wrap the memory allocated with vm_allocate with an NSData object which will allow
+        // use to rely on ObjC ARC (or even MMR) to manage the memory's lifetime
 
-            // Block to deallocate memory created with vm_allocate when the NSData object is no
-            // longer referenced
-            void (^deallocProvidedAddress)(void *bytes, NSUInteger length) =
-                ^(void *bytes, NSUInteger length)
-                {
-                    vm_deallocate((vm_map_t)mach_task_self(),
-                                  (vm_address_t)bytes,
-                                  length);
-                };
+        // Block to deallocate memory created with vm_allocate when the NSData object is no
+        // longer referenced
+        void (^deallocProvidedAddress)(void *bytes, NSUInteger length) =
+            ^(void *bytes, NSUInteger length)
+            {
+                vm_deallocate((vm_map_t)mach_task_self(),
+                              (vm_address_t)bytes,
+                              length);
+            };
 
-            // Create a data object to wrap system memory and pass a deallocator to free the
-            // memory allocated with vm_allocate when the data object has been released
-            _updateData[i] = [[NSData alloc] initWithBytesNoCopy:updateAddress
-                                                          length:updateDataSize
-                                                     deallocator:deallocProvidedAddress];
-        }
+        // Create a data object to wrap system memory and pass a deallocator to free the
+        // memory allocated with vm_allocate when the data object has been released
+        _updateData = [[NSData alloc] initWithBytesNoCopy:updateAddress
+                                                      length:updateDataSize
+                                                 deallocator:deallocProvidedAddress];
     }
 }
 
@@ -296,9 +285,9 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
 
     [blitEncoder copyFromBuffer:buffer
                    sourceOffset:0
-                       toBuffer:_updateBuffer[_currentBufferIndex]
+                       toBuffer:_updateBuffer
               destinationOffset:0
-                           size:_updateBuffer[_currentBufferIndex].length];
+                           size:_updateBuffer.length];
 
     [blitEncoder popDebugGroup];
 
@@ -347,8 +336,6 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
 {
     do
     {
-        _currentBufferIndex = (_currentBufferIndex + 1) % AAPLNumUpdateBuffersStored;
-
         id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
 
         id<MTLBuffer> positionBuffer = [self simulateFrameWithCommandBuffer:commandBuffer];

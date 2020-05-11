@@ -339,11 +339,13 @@ matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_look_at_right_hand(float eyeX, float e
 }
 
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_ortho_left_hand(float left, float right, float bottom, float top, float nearZ, float farZ) {
-    return matrix_make_rows(
+    matrix_float4x4 const m = matrix_make_rows(
         2 / (right - left),                  0,                  0, (left + right) / (left - right),
                          0, 2 / (top - bottom),                  0, (top + bottom) / (bottom - top),
                          0,                  0, 1 / (farZ - nearZ),          nearZ / (nearZ - farZ),
                          0,                  0,                  0,                               1 );
+
+    return m;
 }
 
 matrix_float4x4 AAPL_SIMD_OVERLOAD matrix_ortho_right_hand(float left, float right, float bottom, float top, float nearZ, float farZ) {
