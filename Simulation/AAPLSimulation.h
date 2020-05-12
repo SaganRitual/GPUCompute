@@ -51,9 +51,6 @@ typedef void (^AAPLFullDatasetProvider)(NSData * __nonnull positionData,
                                  velocityData:(nonnull NSData *)velocityData
                             forSimulationTime:(CFAbsoluteTime)simulationTime;
 
-// Execute simulation on another thread, providing updates and final results with supplied blocks
-- (void)runAsyncWithUpdateHandler:(nonnull AAPLDataUpdateHandler)updateHandler;
-
 // Execute a single frame of the simulation (on the current thread)
 - (nonnull id<MTLBuffer>)simulateFrameWithCommandBuffer:(nonnull id<MTLCommandBuffer>)commandBuffer;
 

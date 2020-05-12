@@ -331,34 +331,4 @@ static vector_float3 generate_random_normalized_vector(float min, float max, flo
     return _positions[_newBufferIndex];
 }
 
-/// Run the asynchronous simulation loop
-- (void)runAsyncLoopWithUpdateHandler:(nonnull AAPLDataUpdateHandler)updateHandler
-{
-    do
-    {
-        id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
-
-        id<MTLBuffer> positionBuffer = [self simulateFrameWithCommandBuffer:commandBuffer];
-
-        [self fillUpdateBufferWithPositionBuffer:positionBuffer
-                                  usingCommandBuffer:commandBuffer];
-
-        [commandBuffer commit];
-
-    } while(_simulationTime < _config->simDuration && !self.halt);
-}
-
-/// Run the simulation asynchronously on a separate thread
-- (void)runAsyncWithUpdateHandler:(nonnull AAPLDataUpdateHandler)updateHandler
-{
-    dispatch_queue_t globalConcurrentQueue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-
-    dispatch_async(globalConcurrentQueue, ^()
-    {
-        self->_commandQueue = [self->_device newCommandQueue];
-
-        [self runAsyncLoopWithUpdateHandler:updateHandler];
-    });
-}
-
 @end

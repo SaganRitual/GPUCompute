@@ -34,9 +34,6 @@ static const NSUInteger AAPLGaussianMapSize = 64;
     id<MTLRenderPipelineState> _renderPipeline;
     id<MTLDepthStencilState> _depthState;
 
-    // Current buffer to fill with dynamic uniform data and set for the current frame
-    uint8_t _currentBufferIndex;
-
     // Projection matrix calculated as a function of view size
     matrix_float4x4 _projectionMatrix;
 
@@ -334,24 +331,6 @@ static const NSUInteger AAPLGaussianMapSize = 64;
     }
 
     [commandBuffer popDebugGroup];
-}
-
-/// Draw particles with the positions passed to this object with -[AAPLRenderer providePositionData:]
-- (void)drawProvidedPositionDataWithNumBodies:(NSUInteger)numBodies
-                                          inView:(nonnull MTKView *)view
-{
-
-    // Create a new command buffer for each render pass to the current drawable
-    id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
-    commandBuffer.label = @"Render Command Buffer";
-
-    [self drawWithCommandBuffer:commandBuffer
-                positionsBuffer:_positionsBuffer
-                      numBodies:numBodies
-                         inView:view];
-
-    // Finalize rendering here & push the command buffer to the GPU
-    [commandBuffer commit];
 }
 
 @end

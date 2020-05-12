@@ -259,11 +259,6 @@ static const CFTimeInterval AAPLSecondsToPresentSimulationResults = 4.0;
 
         _simulationTime += _config->simInterval;
     }
-    else
-    {
-        [_renderer drawProvidedPositionDataWithNumBodies:numBodies
-                                                  inView:_view];
-    }
 
     NSUInteger percentComplete;
 

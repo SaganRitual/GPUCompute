@@ -21,9 +21,6 @@ Header for renderer class which performs Metal setup and per frame rendering
                     numBodies:(NSUInteger)numBodies
                        inView:(nonnull MTKView *)view;
 
-- (void)drawProvidedPositionDataWithNumBodies:(NSUInteger)numParticles
-                                       inView:(nonnull MTKView *)view;
-
 - (void)setRenderScale:(float)renderScale withDrawableSize:(CGSize)size;
 
 @property (nonatomic, readonly, nonnull) id<MTLDevice> device;
